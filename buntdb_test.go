@@ -46,7 +46,7 @@ func testClose(db *DB) {
 	_ = os.RemoveAll("data.db")
 }
 
-func TestBackgroudOperations(t *testing.T) {
+func TestBackgroundOperations(t *testing.T) {
 	db := testOpen(t)
 	defer testClose(db)
 	for i := 0; i < 1000; i++ {
@@ -2917,4 +2917,44 @@ func TestWrappedError(t *testing.T) {
 		}
 	}()
 	panicErr(errors.New("my fake error"))
+}
+
+func TestIssue112(t *testing.T) {
+	defer os.RemoveAll("data.db")
+	db, err := Open("data.db")
+	if err != nil {
+		panicErr(err)
+	}
+	err = db.Update(func(tx *Tx) error {
+		_, _, err := tx.Set("key:112", "value:112-old", nil)
+		return err
+	})
+	if err != nil {
+		panicErr(err)
+	}
+	err = db.Update(func(tx *Tx) error {
+		_, _, err := tx.Set("key:112", "value:112", &SetOptions{Expires: true, TTL: time.Second})
+		return err
+	})
+	if err != nil {
+		panicErr(err)
+	}
+	db.Close()
+	time.Sleep(time.Second)
+	db, err = Open("data.db")
+	if err != nil {
+		panicErr(err)
+	}
+	err = db.View(func(tx *Tx) error {
+		_, err := tx.Get("key:112")
+		return err
+	})
+	assert.Assert(err == ErrNotFound)
+	db.View(func(tx *Tx) error {
+		err := tx.Ascend("", func(key, value string) bool {
+			t.Fatalf("key: %s, value: %s\n", key, value)
+			return true
+		})
+		return err
+	})
 }
